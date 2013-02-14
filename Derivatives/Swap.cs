@@ -42,14 +42,22 @@ namespace Derivatives
         double accrual;
         int payFrequency;
 
-        double CalcDuration()
+        internal DateTime EffectiveDate { get { return startDate; } set { startDate = value; } }
+        internal DateTime ValuationDate { set { valuationDate = value; } }
+        internal double Notional { set { notional = value; } }
+        internal int PayFrequency { set { payFrequency = value; } }
+        internal DateTime MaturityDate { set { maturityDate = value; } }
+        internal List<double> FloatRates { get { return floatRates; } }
+        internal double FloatValue { get { return value; } set { value = this.value; } }
+
+        internal double CalcDuration()
         {
             double duration = 0;
             duration = (double)((SwapConstants.PayDates[0] - valuationDate).TotalDays + 1) / SwapConstants.Three_Sixty_Five;
             return duration;
         }
 
-        double CalcDV01()
+        internal double CalcDV01()
         {
             double duration = CalcDuration();
             double val = this.value;
@@ -59,7 +67,7 @@ namespace Derivatives
             return -DV;
         }
 
-        double CalcModifiedDuration()
+        internal double CalcModifiedDuration()
         {
             double val = CalcDV01();
             double marketValue = this.value;
@@ -68,7 +76,7 @@ namespace Derivatives
             return MD;
         }
 
-        void CalcPayFloat()
+        internal void CalcPayFloat()
         {
             double val = 0;
             double diff = 0;
@@ -113,13 +121,14 @@ namespace Derivatives
         private DateTime maturityDate;
         private DateTime valuationDate;
 
-        double Value { get { return value; } set { this.value = value; } }
-        DateTime ValuationDate { set { valuationDate = value; } }
-        double Notional { set { notional = value; } }
-        int PayFrequency { set { payFrequency = value; } }
-        double FixedLegRate { set { fixedLegRate = value; } }
-        DateTime MaturityDate { set { maturityDate = value; } }
-        List<double> PayFixedLeg { set { payFixedLeg = value; } }
+        internal double Value { get { return value; } set { this.value = value; } }
+        internal DateTime ValuationDate { set { valuationDate = value; } }
+        internal DateTime EffectiveDate { set { effectiveDate = value; } }
+        internal double Notional { set { notional = value; } }
+        internal int PayFrequency { set { payFrequency = value; } }
+        internal double FixedLegRate { set { fixedLegRate = value; } }
+        internal DateTime MaturityDate { set { maturityDate = value; } }
+        internal List<double> PayFixedLeg { set { payFixedLeg = value; } }
 
         FixedLeg(List<double> payFixedLeg, double fixedLegRate, double fixedLegBasis, int payFrequency)
         {
@@ -129,7 +138,7 @@ namespace Derivatives
             this.payFrequency = payFrequency;
         }
 
-        double CalcDuration()
+        internal double CalcDuration()
         {
             double sum = 0;
             double val = this.value;
@@ -148,7 +157,7 @@ namespace Derivatives
             return duration;
         }
 
-        double CalcDV01()
+        internal double CalcDV01()
         {
             double duration = CalcDuration();
             double val = this.value;
@@ -160,7 +169,7 @@ namespace Derivatives
             return DV;
         }
 
-        double CalModifiedDuration()
+        internal double CalModifiedDuration()
         {
             double val = CalcDV01();
             double marketValue = this.Value;
@@ -169,11 +178,10 @@ namespace Derivatives
             return MD;
         }
 
-        void CalcPayFixed()
+        internal void CalcPayFixed()
         {
             double val = 0;
             int diff = 0;
-            DateTime dateDiff;
 
             for (int i = 0; i < SwapConstants.PayDates.Count; i++)
             {
@@ -214,5 +222,112 @@ namespace Derivatives
 
     public class Swap
     {
+        public Swap(double notional, DateTime maturity, DateTime effectiveDate, DateTime settlementDate, DateTime valuationDate, Dictionary<double,double> liborRate, Dictionary<double, double> disc,
+            double fixedRate, int type)
+        {
+            this.notional = notional;
+            this.maturity = maturity;
+            this.effectiveDate = effectiveDate;
+            this.settlementDate = settlementDate;
+            this.valuationDate = valuationDate;
+
+            this.fixedLeg.Notional = notional;
+            this.fixedLeg.ValuationDate = valuationDate;
+            this.fixedLeg.PayFrequency = 2;
+            this.fixedLeg.FixedLegRate = fixedRate;
+            this.fixedLeg.MaturityDate = maturity;
+            this.fixedLeg.CalcPayFixed();
+            this.fixedLeg.EffectiveDate = effectiveDate;
+
+            this.floatingLeg.EffectiveDate = effectiveDate;
+            this.floatingLeg.PayFrequency = 4;
+            this.floatingLeg.Notional = notional;
+            this.floatingLeg.ValuationDate = valuationDate;
+
+
+        }
+
+        private int swapType;
+        private double notional;
+        private double fixedAccrued;
+        private double floatAccrued;
+        private double fixedRate;
+        private FloatingLeg floatingLeg;
+        private FixedLeg fixedLeg;
+        private DateTime maturity;
+        private DateTime fixedAccruedDate;
+        private DateTime floatAccruedDate;
+        private DateTime effectiveDate;
+        private DateTime settlementDate;
+        DateTime valuationDate;
+        private string index;
+        private Dictionary<double, double> discRates;
+        private Dictionary<double, double> floatrates;
+
+        internal double Notional { get { return notional; } }
+
+        internal void SetDiscountRates(Dictionary<double, double> rate)
+        {
+            discRates = rate;
+        }
+
+        internal double CalDV01()
+        {
+            double val = 0;
+            if (swapType == 0)
+                val = fixedLeg.CalcDV01() - floatingLeg.CalcDV01();
+            else
+                val = floatingLeg.CalcDV01() - fixedLeg.CalcDV01();
+
+            Debug.WriteLine(String.Format("Swap DV01 = {0}", val));
+            return val;
+        }
+
+        internal void CalcPayDates(DateTime tradeDate, DateTime endDate, DateTime valuation)
+        {
+            effectiveDate = tradeDate.AddDays(-1);
+
+            if (effectiveDate.DayOfWeek == DayOfWeek.Saturday)
+                effectiveDate.AddDays(2);
+            else if (effectiveDate.DayOfWeek == DayOfWeek.Sunday)
+                effectiveDate.AddDays(1);
+
+            DateTime currDate = effectiveDate;
+
+            int count = 0;
+            while (currDate <= endDate)
+            {
+                currDate.AddMonths(3);
+                while (currDate.Day > effectiveDate.Day)
+                {
+                    currDate = currDate.AddDays(-1);
+                }
+
+                if (currDate <= valuation)
+                {
+                    if (currDate.DayOfWeek == DayOfWeek.Saturday)
+                        currDate.AddDays(2);
+                    else if (currDate.DayOfWeek == DayOfWeek.Sunday)
+                        currDate.AddDays(1);
+                    else if (currDate == new DateTime(currDate.Year, 12, 25))
+                        currDate.AddDays(1);
+
+                    fixedAccruedDate = currDate;
+                }
+                if ((currDate <= endDate) && (currDate >= valuation))
+                {
+                    if (currDate.DayOfWeek == DayOfWeek.Saturday)
+                        currDate.AddDays(2);
+                    else if (currDate.DayOfWeek == DayOfWeek.Sunday)
+                        currDate.AddDays(1);
+                    else if (currDate == new DateTime(currDate.Year, 12, 25))
+                        currDate.AddDays(1);
+
+                    SwapConstants.PayDates.Add(currDate);
+                    count++;
+                }
+
+            }
+        }
     }
 }
