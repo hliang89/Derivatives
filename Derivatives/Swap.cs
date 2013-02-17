@@ -7,6 +7,12 @@ using System.Diagnostics;
 
 namespace Derivatives
 {
+    public enum SwapType
+    {
+        PayFloatReceiveFixed = 0,
+        PayFixedReceiveFloat = 1
+    }
+
     public static class SwapConstants
     {
         public const int NumDates = 100;
@@ -128,7 +134,7 @@ namespace Derivatives
         internal int PayFrequency { set { payFrequency = value; } }
         internal double FixedLegRate { set { fixedLegRate = value; } }
         internal DateTime MaturityDate { set { maturityDate = value; } }
-        internal List<double> PayFixedLeg { set { payFixedLeg = value; } }
+        internal List<double> PayFixedLeg { get { return payFixedLeg; } set { payFixedLeg = value; } }
 
         FixedLeg(List<double> payFixedLeg, double fixedLegRate, double fixedLegBasis, int payFrequency)
         {
@@ -222,32 +228,7 @@ namespace Derivatives
 
     public class Swap
     {
-        public Swap(double notional, DateTime maturity, DateTime effectiveDate, DateTime settlementDate, DateTime valuationDate, Dictionary<double,double> liborRate, Dictionary<double, double> disc,
-            double fixedRate, int type)
-        {
-            this.notional = notional;
-            this.maturity = maturity;
-            this.effectiveDate = effectiveDate;
-            this.settlementDate = settlementDate;
-            this.valuationDate = valuationDate;
-
-            this.fixedLeg.Notional = notional;
-            this.fixedLeg.ValuationDate = valuationDate;
-            this.fixedLeg.PayFrequency = 2;
-            this.fixedLeg.FixedLegRate = fixedRate;
-            this.fixedLeg.MaturityDate = maturity;
-            this.fixedLeg.CalcPayFixed();
-            this.fixedLeg.EffectiveDate = effectiveDate;
-
-            this.floatingLeg.EffectiveDate = effectiveDate;
-            this.floatingLeg.PayFrequency = 4;
-            this.floatingLeg.Notional = notional;
-            this.floatingLeg.ValuationDate = valuationDate;
-
-
-        }
-
-        private int swapType;
+        private SwapType swapType;
         private double notional;
         private double fixedAccrued;
         private double floatAccrued;
@@ -262,19 +243,46 @@ namespace Derivatives
         DateTime valuationDate;
         private string index;
         private Dictionary<double, double> discRates;
-        private Dictionary<double, double> floatrates;
+        private Dictionary<double, double> floatRates;
 
         internal double Notional { get { return notional; } }
+        internal Dictionary<double, double> DiscRates { set { discRates = value; } }
 
-        internal void SetDiscountRates(Dictionary<double, double> rate)
+        public Swap(double notional, DateTime maturity, DateTime effectiveDate, DateTime settlementDate, DateTime valuationDate, Dictionary<double,double> liborRate, Dictionary<double, double> disc,
+            double fixedRate, int type)
         {
-            discRates = rate;
+            CalcPayDates(effectiveDate, maturity, valuationDate);
+            this.notional = notional;
+            this.maturity = maturity;
+            this.effectiveDate = effectiveDate;
+            this.settlementDate = settlementDate;
+            this.valuationDate = valuationDate;
+            this.DiscRates = discRates;
+
+            //fixed leg
+            this.fixedLeg.Notional = notional;
+            this.fixedLeg.ValuationDate = valuationDate;
+            this.fixedLeg.PayFrequency = 2;
+            this.fixedLeg.FixedLegRate = fixedRate;
+            this.fixedLeg.MaturityDate = maturity;
+            this.fixedLeg.CalcPayFixed();
+            this.fixedLeg.EffectiveDate = effectiveDate;
+
+            //floating leg
+            this.floatingLeg.EffectiveDate = effectiveDate;
+            this.floatingLeg.PayFrequency = 4;
+            this.floatingLeg.Notional = notional;
+            this.floatingLeg.ValuationDate = valuationDate;
+
+            this.floatingLeg.CalcPayFloat();
+            NetPayments();
+            CalcDV01();
         }
 
-        internal double CalDV01()
+        internal double CalcDV01()
         {
             double val = 0;
-            if (swapType == 0)
+            if (swapType == SwapType.PayFloatReceiveFixed)
                 val = fixedLeg.CalcDV01() - floatingLeg.CalcDV01();
             else
                 val = floatingLeg.CalcDV01() - fixedLeg.CalcDV01();
@@ -326,8 +334,56 @@ namespace Derivatives
                     SwapConstants.PayDates.Add(currDate);
                     count++;
                 }
-
             }
+        }
+
+        internal void NetPayments()
+        {
+            double val = 0;
+            double y = 0;
+            List<double> fixedLegPays = this.fixedLeg.PayFixedLeg;
+            List<double> floatLegPays = this.floatingLeg.FloatRates;
+            double x = 0;
+            double sum = 0;
+            double sumFixed = 0;
+            double sumFloat = 0;
+
+            if (swapType == SwapType.PayFloatReceiveFixed)
+            {
+                fixedAccrued = notional * fixedRate * (int)(valuationDate - fixedAccruedDate).TotalDays / SwapConstants.Three_Sixty;
+                floatAccrued = -notional * -floatRates[0] * ((int)(valuationDate - fixedAccruedDate).TotalDays / SwapConstants.Three_Sixty_Five);
+            }
+            else
+            {
+                fixedAccrued = -notional * fixedRate * (valuationDate - fixedAccruedDate).TotalDays / SwapConstants.Three_Sixty;
+                floatAccrued = notional * floatRates[0] * ((int)(valuationDate - fixedAccruedDate).TotalDays / SwapConstants.Three_Sixty_Five);
+            }
+
+            for (int i = 0; i<SwapConstants.PayDates.Count; i++)
+            {
+                x = ((SwapConstants.PayDates[i+1] - SwapConstants.PayDates[0]).TotalDays + 1)/SwapConstants.Three_Sixty;
+                y = SwapConstants.Interpolate(discRates[Math.Floor(x)], discRates[Math.Ceiling(x)], Math.Floor(x), Math.Ceiling(x), x);
+
+                if (swapType == SwapType.PayFloatReceiveFixed)
+                {
+                    val = (fixedLegPays[i] - floatLegPays[i]) * y;
+                    sumFixed += fixedLegPays[i]*y;
+                    sumFloat -= floatLegPays[i]*y;
+                }
+                else
+                {
+                    val = (floatLegPays[i] - fixedLegPays[i])*y;
+                    sumFixed -= fixedLegPays[i];
+                    sumFloat += floatLegPays[i];
+                }
+                sum += val;
+            }
+
+            fixedLeg.Value = sumFixed;
+            floatingLeg.FloatValue = sumFloat;
+
+            Debug.Write(String.Format("Fixed Accrued = {0} \n\r Float Accrued = {1} \n\r Accrued = {2} \n\r Principal = {3} Market value = {4} \n\r",
+                fixedAccrued, floatAccrued, (fixedAccrued + floatAccrued), sum, sum + (fixedAccrued + floatAccrued)));
         }
     }
 }
