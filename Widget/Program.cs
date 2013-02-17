@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.IO;
 
 using Derivatives;
 
@@ -17,6 +18,13 @@ namespace Widget
     {
         static void Main(string[] args)
         {
+            try
+            {
+                SwapTest();
+            }
+            catch (Exception e)
+            {
+            }
         }
 
         static void SwapTest()
@@ -32,12 +40,43 @@ namespace Widget
             Dictionary<double, double> libor;
             Dictionary<double, double> discRate;
 
-            int swapType = 1;
+            SwapType swapType = SwapType.PayFixedReceiveFloat;
 
-            
+            List<List<string>> parsedData = new List<List<string>>();
 
+            using (StreamReader sr = new StreamReader("..\\..\\..\\Resources\\SwapData.csv"))
+            {
+                List<string> lineData = new List<string>();
+                lineData = ProcessCSVLine(sr.ReadLine());
+                parsedData.Add(lineData);
+            }
 
+            foreach (var lineData in parsedData)
+            {
+                foreach (var data in lineData)
+                {
+                    Console.Write(data + ", ");
+                }
+                Console.Write(Environment.NewLine);
+            }
         }
+
+        public static List<string> ProcessCSVLine(string line)
+        {
+            List<string> seperated = line.Split(',').ToList();
+
+            List<string> cleaned = new List<string>();
+            foreach (var s in seperated)
+            {
+                if (!String.IsNullOrWhiteSpace(s))
+                {
+                    cleaned.Add(s.Trim());
+                }
+            }
+            return cleaned;
+        }
+
+        
 
     }
 
