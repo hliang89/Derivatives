@@ -31,15 +31,17 @@ namespace Widget
         {
             DateTime start = new DateTime(2004, 3, 29);
             DateTime maturity = new DateTime(2013, 3, 28);
-            DateTime valuation = new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day);
-            DateTime effectiveDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day);
+            DateTime valuation = new DateTime(2005, 8, 14);
+            DateTime effectiveDate = new DateTime(2004, 3, 29);
             double notional = 3300000;
             double swapRate = 0.03969;
 
-            List<double> mat;
-            Dictionary<double, double> libor;
-            Dictionary<double, double> discRate;
+            List<double> mat = new List<double>();
+            Dictionary<double, double> libor = new Dictionary<double, double>();
+            Dictionary<double, double> discRate = new Dictionary<double,double>();
 
+            double yr = 0;
+            double rate = 0;
             SwapType swapType = SwapType.PayFixedReceiveFloat;
 
             List<List<string>> parsedData = new List<List<string>>();
@@ -47,18 +49,55 @@ namespace Widget
             using (StreamReader sr = new StreamReader("..\\..\\..\\Resources\\SwapData.csv"))
             {
                 List<string> lineData = new List<string>();
-                lineData = ProcessCSVLine(sr.ReadLine());
-                parsedData.Add(lineData);
+
+                while (!sr.EndOfStream)
+                {
+                    lineData = ProcessCSVLine(sr.ReadLine());
+                    parsedData.Add(lineData);
+                }
             }
 
+
+            mat.Add(0);
+            libor.Add(0, 0);
+            discRate.Add(0, 0);
             foreach (var lineData in parsedData)
             {
-                foreach (var data in lineData)
+                
+                if (lineData[0].Contains("MO"))
                 {
-                    Console.Write(data + ", ");
+                    yr = Double.Parse(lineData[0].Substring(0, lineData[0].IndexOf(' '))) / 12;
                 }
-                Console.Write(Environment.NewLine);
+                else if (lineData[0].Contains("WK"))
+                {
+                    yr = Double.Parse(lineData[0].Substring(0, lineData[0].IndexOf(' '))) / 52;
+                }
+                else if (lineData[0].Contains("DY"))
+                {
+                    yr = Double.Parse(lineData[0].Substring(0, lineData[0].IndexOf(' '))) / 365;
+                }
+                else
+                {
+                    yr = Double.Parse(lineData[0].Substring(0, lineData[0].IndexOf(' ')));
+                }
+                
+
+                mat.Add(yr);
+                libor.Add(yr, Double.Parse(lineData[1]));
+                discRate.Add(yr, Double.Parse(lineData[2]));
             }
+            
+
+            Swap s = new Swap(notional, maturity, effectiveDate, start, start.AddDays(1), libor, discRate, swapRate, SwapType.PayFixedReceiveFloat);
+
+            //foreach (var lineData in parsedData)
+            //{
+            //    foreach (var data in lineData)
+            //    {
+            //        Console.Write(data + ", ");
+            //    }
+            //    Console.Write(Environment.NewLine);
+            //}
         }
 
         public static List<string> ProcessCSVLine(string line)
@@ -75,10 +114,5 @@ namespace Widget
             }
             return cleaned;
         }
-
-        
-
     }
-
-    
 }
